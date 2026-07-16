@@ -1,0 +1,32 @@
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+backend/venv/
+backend/.venv/
+backend/uploads/resumes/*
+!backend/uploads/resumes/.gitkeep
+
+# Node/Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+frontend/.env.local
+frontend/.env.production
+frontend/.env.development
+
+# Environments / Credentials
+.env
+.env.local
+.env.production
+.env.development
+backend/.env
+backend/.env.local
+backend/.env.production
+backend/.env.development
+
+# OS
+.DS_Store
+Thumbs.db
