@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
-import { Upload, FileText, X, Loader2, Sparkles, CheckCircle, AlertCircle, TrendingUp, Wand2, Download, Eye, ChevronDown, ChevronUp } from 'lucide-react'
-import api from '../lib/api'
+import { Upload, FileText, X, Loader2, Sparkles, CheckCircle, AlertCircle, TrendingUp, Wand2, Download, Eye, ChevronDown, ChevronUp, GitCompare } from 'lucide-react'
+import api, { getErrorMessage } from '../lib/api'
 import toast from 'react-hot-toast'
 
 function CircularScore({ score }: { score: number }) {
@@ -32,6 +32,8 @@ export default function AnalyzePage() {
   const [correcting, setCorrecting] = useState(false)
   const [correctionResult, setCorrectionResult] = useState<any>(null)
   const [showChanges, setShowChanges] = useState(false)
+  const [showDiffs, setShowDiffs] = useState(false)
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleFile = async (f: File) => {
@@ -41,7 +43,7 @@ export default function AnalyzePage() {
       const fd = new FormData(); fd.append('file', f)
       const r = await api.post('/resumes/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       setResume(r.data); toast.success('Resume uploaded!'); setStep('details')
-    } catch (e: any) { toast.error(e.response?.data?.detail || 'Upload failed') } finally { setUploading(false) }
+    } catch (e: any) { toast.error(getErrorMessage(e, 'Upload failed')) } finally { setUploading(false) }
   }
 
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }
@@ -52,7 +54,7 @@ export default function AnalyzePage() {
     try {
       const r = await api.post('/analysis/', { resume_id: resume.id, job_description: jobDesc || undefined })
       setAnalysis(r.data); setStep('results'); toast.success('Analysis complete!')
-    } catch (e: any) { toast.error(e.response?.data?.detail || 'Analysis failed') } finally { setAnalyzing(false) }
+    } catch (e: any) { toast.error(getErrorMessage(e, 'Analysis failed')) } finally { setAnalyzing(false) }
   }
 
   const reset = () => {
@@ -63,6 +65,7 @@ export default function AnalyzePage() {
     setAnalysis(null)
     setCorrectionResult(null)
     setShowChanges(false)
+    setShowDiffs(false)
   }
 
   const handleCorrect = async () => {
@@ -70,12 +73,13 @@ export default function AnalyzePage() {
     setCorrecting(true)
     setCorrectionResult(null)
     setShowChanges(false)
+    setShowDiffs(false)
     try {
       const res = await api.post(`/correction/correct?resume_id=${resume.id}`)
       setCorrectionResult(res.data)
       toast.success(`Resume corrected! ${res.data.changed_lines} lines improved.`)
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Correction failed")
+      toast.error(getErrorMessage(error, "Correction failed"))
     } finally {
       setCorrecting(false)
     }
@@ -172,19 +176,132 @@ export default function AnalyzePage() {
       {step === 'results' && analysis && (
         <div className="space-y-6">
           <div className="p-6 rounded-xl bg-[#1E293B] border border-gray-800">
-            <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2"><Sparkles className="w-5 h-5 text-[#60A5FA]" /> ATS Score</h3>
-            <div className="flex flex-col md:flex-row items-center gap-8">
-              <CircularScore score={analysis.ats_score || 0} />
-              <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-4 w-full">
-                {analysis.ats_details && Object.entries(analysis.ats_details).filter(([k]) => k !== 'overall').map(([k, v]: any) => (
-                  <div key={k} className="p-3 rounded-xl bg-[#0F172A]/50">
-                    <p className="text-xs text-gray-500 mb-1 capitalize">{k}</p>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 rounded-full bg-gray-800"><div className={`h-2 rounded-full transition-all ${v >= 80 ? 'bg-[#22C55E]' : v >= 60 ? 'bg-[#EAB308]' : 'bg-[#EF4444]'}`} style={{ width: `${v}%` }} /></div>
-                      <span className="text-sm font-medium text-gray-300">{Math.round(v)}</span>
+            <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[#60A5FA]" /> ATS Score Breakdown
+            </h3>
+            
+            <div className="flex flex-col lg:flex-row gap-8 items-start">
+              {/* Overall Score Circle Card */}
+              <div className="w-full lg:w-1/3 flex flex-col items-center justify-center p-6 rounded-2xl bg-[#0F172A]/50 border border-gray-800 text-center">
+                <p className="text-sm font-semibold text-gray-400 mb-3">Overall ATS Score</p>
+                <CircularScore score={analysis.overall_score || analysis.ats_score || 0} />
+                <p className="text-xs text-gray-500 mt-4 max-w-xs">
+                  This score is calculated using a professional weighted algorithm that prioritizes keywords matching, experience history, technical skills, formatting structure, and language mechanics.
+                </p>
+              </div>
+
+              {/* Category Breakdown list */}
+              <div className="flex-1 w-full space-y-3">
+                {[
+                  'formatting',
+                  'contact_information',
+                  'skills',
+                  'experience',
+                  'keywords',
+                  'action_verbs',
+                  'grammar',
+                  'metrics'
+                ].map((k) => {
+                  let rawVal = analysis.ats_details?.breakdown ? analysis.ats_details.breakdown[k] : undefined;
+                  const isKeywordsNA = k === 'keywords' && (analysis.job_matching_not_available || analysis.job_description === null || rawVal === null || rawVal === undefined);
+                  
+                  let score = 0;
+                  let badgeText = "Needs Improvement"
+                  let badgeColor = "bg-[#EF4444]/20 text-[#EF4444] border-[#EF4444]/30"
+                  let progressColor = "bg-[#EF4444]"
+
+                  if (isKeywordsNA) {
+                    badgeText = "N/A"
+                    badgeColor = "bg-gray-800/40 text-gray-400 border-gray-700/50"
+                    progressColor = "bg-gray-850"
+                  } else {
+                    // Validate raw score
+                    if (rawVal === null || rawVal === undefined || isNaN(rawVal) || typeof rawVal !== 'number') {
+                      console.error(`Invalid score for category ${k}:`, rawVal);
+                      rawVal = 0;
+                    }
+                    
+                    score = Math.round(rawVal)
+                    if (score >= 90) {
+                      badgeText = "Excellent"
+                      badgeColor = "bg-[#22C55E]/20 text-[#22C55E] border-[#22C55E]/30"
+                      progressColor = "bg-[#22C55E]"
+                    } else if (score >= 75) {
+                      badgeText = "Good"
+                      badgeColor = "bg-[#3B82F6]/20 text-[#60A5FA] border-[#3B82F6]/30"
+                      progressColor = "bg-[#3B82F6]"
+                    } else if (score >= 50) {
+                      badgeText = "Average"
+                      badgeColor = "bg-[#EAB308]/20 text-[#EAB308] border-[#EAB308]/30"
+                      progressColor = "bg-[#EAB308]"
+                    }
+                  }
+
+                  const isExpanded = expandedCategory === k
+
+                  // Retrieve suggestions for this category
+                  const categorySugs = analysis.ats_details?.category_suggestions?.find((cs: any) => cs.category.toLowerCase().replace(/ /g, "_") === k.toLowerCase())?.suggestions || []
+
+                  return (
+                    <div key={k} data-testid={`category-card-${k}`} className="p-4 rounded-xl bg-[#0F172A]/40 border border-gray-800 hover:border-gray-700/50 transition-all space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-semibold text-gray-200 capitalize">{k.replace(/_/g, ' ')}</span>
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-medium border ${badgeColor}`}>{badgeText}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-bold text-gray-300">{isKeywordsNA ? 'N/A' : `${score}/100`}</span>
+                          <button
+                            onClick={() => setExpandedCategory(isExpanded ? null : k)}
+                            className="text-xs text-[#60A5FA] hover:text-[#3B82F6] font-medium flex items-center gap-0.5 cursor-pointer bg-transparent border-0"
+                          >
+                            {isExpanded ? "Hide Details ▲" : "Why? ▼"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="w-full h-2 rounded-full bg-gray-800">
+                        <div className={`h-2 rounded-full transition-all duration-500 ${progressColor}`} style={{ width: `${isKeywordsNA ? 0 : score}%` }} />
+                      </div>
+
+                      {/* Expandable "Why?" Collapse Section */}
+                      {isExpanded && (
+                        <div className="mt-3 p-3 rounded-lg bg-[#1E293B]/60 border border-gray-800 text-xs text-gray-300 space-y-2">
+                          {k === 'skills' && analysis.missing_skills?.length > 0 && (
+                            <div className="mb-2">
+                              <p className="font-semibold text-red-400 mb-1">Missing technical skills compared to requirements:</p>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {analysis.missing_skills.map((s: string) => (
+                                  <span key={s} className="px-1.5 py-0.5 rounded bg-red-950/40 text-red-400 border border-red-900/50 text-[10px]">
+                                    -{s}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {isKeywordsNA ? (
+                            <p className="text-gray-400 font-medium">
+                              No job description was supplied. Paste a job description in the details step to match your skills and score keywords matching.
+                            </p>
+                          ) : categorySugs.length > 0 ? (
+                            <ul className="list-disc pl-4 space-y-1">
+                              {categorySugs.map((sug: string, idx: number) => (
+                                <li key={idx}>{sug}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-gray-400 font-medium flex items-center gap-1.5">
+                              <CheckCircle className="w-3.5 h-3.5 text-[#22C55E]" />
+                              All standards met! No specific improvement required for this category.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -293,9 +410,117 @@ export default function AnalyzePage() {
                       Download Corrected DOCX
                     </button>
                   )}
+                  {correctionResult.full_diff && (
+                    <button onClick={() => setShowDiffs(!showDiffs)} className={`px-4 py-2 rounded-xl border transition-all text-sm font-medium inline-flex items-center cursor-pointer ${showDiffs ? 'border-[#3B82F6] bg-[#3B82F6]/10 text-[#60A5FA]' : 'border-gray-700 text-gray-300 hover:bg-[#263548]'}`}>
+                      <GitCompare className="w-4 h-4 mr-2" />
+                      {showDiffs ? "Hide Differences" : "Check Differences"}
+                    </button>
+                  )}
                 </div>
 
-                {correctionResult.changes?.length > 0 && (
+                {correctionResult.corrected_analysis && (
+                  <div className="mt-4 p-5 rounded-xl bg-[#0F172A]/50 border border-gray-800 space-y-4">
+                    <h4 className="text-base font-semibold text-gray-200 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#22C55E]" /> ATS Score Improvement
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="p-3 rounded-lg bg-[#1E293B] border border-gray-800">
+                        <p className="text-xs text-gray-400">Overall Score Improvement</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-sm line-through text-gray-500">{Math.round(analysis.overall_score || analysis.ats_score)}</span>
+                          <span className="text-sm text-gray-400">→</span>
+                          <span className="text-xl font-bold text-[#22C55E]">{Math.round(correctionResult.corrected_analysis.overall_score || correctionResult.corrected_analysis.ats_score)}</span>
+                          {Math.round(correctionResult.corrected_analysis.overall_score || correctionResult.corrected_analysis.ats_score) - Math.round(analysis.overall_score || analysis.ats_score) > 0 && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#22C55E]/20 text-[#22C55E]">
+                              +{Math.round(correctionResult.corrected_analysis.overall_score || correctionResult.corrected_analysis.ats_score) - Math.round(analysis.overall_score || analysis.ats_score)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="col-span-1 sm:col-span-2 space-y-2">
+                        <p className="text-xs font-semibold text-gray-400">Category Breakdown Comparison</p>
+                        {[
+                          "formatting",
+                          "contact_information",
+                          "skills",
+                          "experience",
+                          "keywords",
+                          "action_verbs",
+                          "grammar",
+                          "metrics"
+                        ].map((category) => {
+                          const beforeVal = analysis.ats_details?.breakdown?.[category] ?? 0;
+                          const isKeywordsNA = category === 'keywords' && (analysis.job_matching_not_available || analysis.job_description === null);
+                          const afterVal = correctionResult.corrected_analysis.ats_details?.breakdown?.[category] ?? beforeVal;
+                          
+                          const beforeDisp = isKeywordsNA ? 'N/A' : Math.round(beforeVal);
+                          const afterDisp = isKeywordsNA ? 'N/A' : Math.round(afterVal);
+                          const diff = isKeywordsNA ? 0 : Math.round(afterVal) - Math.round(beforeVal);
+                          const isImproved = diff > 0;
+                          
+                          return (
+                            <div key={category} className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${isImproved ? 'bg-[#22C55E]/5 border-[#22C55E]/25' : 'bg-transparent border-gray-800'}`}>
+                              <span className="text-xs font-medium text-gray-300 capitalize">{category.replace(/_/g, " ")}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs line-through text-gray-500">{beforeDisp}</span>
+                                <span className="text-xs text-gray-400">→</span>
+                                <span className={`text-xs font-bold ${isImproved ? 'text-[#22C55E]' : 'text-gray-300'}`}>{afterDisp}</span>
+                                {isImproved && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#22C55E]/20 text-[#22C55E]">
+                                    +{diff}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {showDiffs && correctionResult.full_diff && (
+                  <div className="mt-4 p-6 rounded-2xl bg-[#0F172A] border border-gray-800/80 space-y-4">
+                    <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-200">Resume Difference Viewer</h4>
+                        <p className="text-xs text-gray-400">Contextual view of changes made by AI</p>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-red-500/20 border border-red-500/40 rounded" /> Original</span>
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#22C55E]/20 border border-[#22C55E]/40 rounded" /> Improved</span>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-[#1E293B] rounded-xl border border-gray-800/50 overflow-hidden font-sans text-gray-300 text-[13px] md:text-sm leading-relaxed max-h-[500px] overflow-y-auto p-6 space-y-2 select-text">
+                      {correctionResult.full_diff.map((item: any, idx: number) => {
+                        if (!item.changed) {
+                          return (
+                            <div key={idx} className="py-0.5 px-2 hover:bg-gray-800/10 rounded transition-colors whitespace-pre-wrap">
+                              {item.original}
+                            </div>
+                          )
+                        } else {
+                          return (
+                            <div key={idx} className="my-2 border border-gray-800/80 rounded-lg overflow-hidden">
+                              <div className="bg-red-500/10 border-l-4 border-red-500 text-red-400 py-1.5 px-3 line-through flex items-start gap-2 whitespace-pre-wrap">
+                                <span className="text-red-500/60 select-none font-bold mr-1">-</span>
+                                <div className="flex-1">{item.original}</div>
+                              </div>
+                              <div className="bg-green-500/10 border-l-4 border-[#22C55E] text-[#22C55E] py-1.5 px-3 flex items-start gap-2 whitespace-pre-wrap">
+                                <span className="text-[#22C55E]/60 select-none font-bold mr-1">+</span>
+                                <div className="flex-1">{item.corrected}</div>
+                              </div>
+                            </div>
+                          )
+                        }
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {correctionResult.changes?.length > 0 && !showDiffs && (
                   <div>
                     <button
                       onClick={() => setShowChanges(!showChanges)}
@@ -318,7 +543,7 @@ export default function AnalyzePage() {
                   </div>
                 )}
 
-                <button onClick={() => { setCorrectionResult(null); setShowChanges(false); }} className="px-4 py-2 rounded-xl border border-gray-700 text-gray-300 hover:bg-[#263548] text-sm font-medium transition-all cursor-pointer">
+                <button onClick={() => { setCorrectionResult(null); setShowChanges(false); setShowDiffs(false); }} className="px-4 py-2 rounded-xl border border-gray-700 text-gray-300 hover:bg-[#263548] text-sm font-medium transition-all cursor-pointer">
                   Correct Again
                 </button>
               </div>

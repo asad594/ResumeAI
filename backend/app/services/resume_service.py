@@ -83,6 +83,7 @@ class ResumeService:
         email = ""
         phone = ""
         location = ""
+        linkedin = ""
         skills = []
         education = []
         experience = []
@@ -91,16 +92,25 @@ class ResumeService:
         languages = []
 
         for line in lines:
-            lower = line.lower()
-            if "@" in line and not email:
-                import re
-                email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', line)
-                if email_match:
-                    email = email_match.group()
-            if any(c.isdigit() for c in line) and ("+" in line or "(" in line) and not phone:
-                phone = line
-            if any(kw in lower for kw in ["city", "state", "country", "address", "location"]) and not location:
-                location = line
+            parts = [p.strip() for p in line.split("|")] if "|" in line else ([p.strip() for p in line.split("•")] if "•" in line else [line])
+            for part in parts:
+                part_lower = part.lower()
+                if "@" in part and not email:
+                    import re
+                    email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', part)
+                    if email_match:
+                        email = email_match.group()
+                if not phone and "@" not in part:
+                    digits_count = sum(1 for c in part if c.isdigit())
+                    if digits_count >= 7 and any(char in part for char in ["+", "(", "-", " "]):
+                        phone = part
+                if not location and "@" not in part and part != name:
+                    if any(kw in part_lower for kw in ["city", "state", "country", "address", "location"]):
+                        location = part
+                    elif any(c in part_lower for c in ["pakistan", "india", "karachi", "lahore", "islamabad", "rawalpindi", "dubai", "london", "new york", "san francisco", "tokyo"]):
+                        location = part
+                if "linkedin.com" in part_lower and not linkedin:
+                    linkedin = part
 
         header_mapping = {
             "skills": ["skills", "technical skills", "technologies", "skills & technologies", "skills and technologies", "proficiencies", "core competencies", "skills & tools", "technical proficiencies"],
@@ -159,6 +169,7 @@ class ResumeService:
             "email": email,
             "phone": phone,
             "location": location,
+            "linkedin": linkedin,
             "skills": list(set(skills)) if skills else [],
             "education": education[:10],
             "experience": experience[:15],

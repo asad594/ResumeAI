@@ -8,6 +8,7 @@ import DashboardPage from './pages/Dashboard'
 import AnalyzePage from './pages/Analyze'
 import HistoryPage from './pages/History'
 import ProfilePage from './pages/Profile'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -18,21 +19,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Toaster position="top-right" toastOptions={{ style: { background: '#1E293B', color: '#F8FAFC', border: '1px solid #334155', borderRadius: '12px' } }} />
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-            <Route index element={<Navigate to="/dashboard" />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="analyze" element={<AnalyzePage />} />
-            <Route path="history" element={<HistoryPage />} />
-            <Route path="profile" element={<ProfilePage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <BrowserRouter>
+          <Toaster position="top-right" toastOptions={{ style: { background: '#1E293B', color: '#F8FAFC', border: '1px solid #334155', borderRadius: '12px' } }} />
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+              <Route index element={<Navigate to="/dashboard" />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="analyze" element={<AnalyzePage />} />
+              <Route path="history" element={<HistoryPage />} />
+              <Route path="profile" element={<ProfilePage />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }

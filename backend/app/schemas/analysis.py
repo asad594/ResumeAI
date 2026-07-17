@@ -27,24 +27,27 @@ class AnalysisCreate(BaseModel):
     job_description: Optional[str] = None
 
 
-class ATSScore(BaseModel):
+class ATSDetails(BaseModel):
     overall: float
     formatting: float
-    keywords: float
+    keywords: Optional[float] = None
     experience: float
     education: float
     skills: float
-
+    breakdown: Optional[Dict[str, Optional[float]]] = None
+    category_suggestions: Optional[List[Dict[str, Any]]] = None
 
 class AnalysisResponse(BaseModel):
     id: int
     resume_id: int
     ats_score: Optional[float] = None
-    ats_details: Optional[Dict[str, float]] = None
+    ats_details: Optional[ATSDetails] = None
+    overall_score: Optional[float] = None
     missing_skills: Optional[List[str]] = None
     matched_skills: Optional[List[str]] = None
     partial_skills: Optional[List[str]] = None
     match_percentage: Optional[float] = None
+    job_matching_not_available: Optional[bool] = None
     suggestions: Optional[List[Dict[str, Any]]] = None
     job_match: Optional[Dict[str, Any]] = None
     job_description: Optional[str] = None

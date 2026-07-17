@@ -6,6 +6,7 @@ from app.core.deps import get_current_user
 from app.schemas.analysis import ResumeResponse, ResumeUploadResponse
 from app.services.resume_service import ResumeService
 from app.models.user import User
+from loguru import logger
 
 router = APIRouter(prefix="/resumes", tags=["Resumes"])
 
@@ -16,8 +17,10 @@ async def upload_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    logger.info(f"RESUME UPLOAD - User ID: {current_user.id}, Original Filename: {file.filename}")
     service = ResumeService(db)
     resume = await service.upload_resume(current_user.id, file)
+    logger.info(f"RESUME UPLOAD COMPLETE - User ID: {current_user.id}, Resume ID: {resume.id}, File size: {resume.file_size} bytes")
     return ResumeUploadResponse(id=resume.id, filename=resume.original_filename, message="Resume uploaded successfully")
 
 

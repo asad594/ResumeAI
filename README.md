@@ -100,7 +100,7 @@ cd ai-resume-analyzer
 cp .env.example .env
 
 # Edit .env with your settings
-# Set OPENAI_API_KEY for AI features
+# Set OPENROUTER_API_KEY for AI features
 
 # Start all services
 docker-compose up -d
@@ -163,7 +163,9 @@ npm run dev
 | ALGORITHM | JWT algorithm | HS256 |
 | ACCESS_TOKEN_EXPIRE_MINUTES | Token expiry | 30 |
 | REFRESH_TOKEN_EXPIRE_DAYS | Refresh token expiry | 7 |
-| OPENAI_API_KEY | OpenAI API key | - |
+| OPENROUTER_API_KEY | OpenRouter API key | - |
+| OPENROUTER_BASE_URL | OpenRouter Base URL | https://openrouter.ai/api/v1 |
+| OPENROUTER_MODEL | OpenRouter Model | google/gemini-2.5-flash |
 | CORS_ORIGINS | Allowed origins | ["http://localhost:3000"] |
 | MAX_FILE_SIZE_MB | Max upload size | 10 |
 
@@ -274,6 +276,20 @@ cd frontend
 npm run build
 npm start
 ```
+
+## OpenRouter Migration Notes
+
+The platform was migrated from Google Gemini to OpenRouter to enable access to a variety of models via an OpenAI-compatible API layer.
+
+### Supported Models
+Any OpenRouter model can be configured using `OPENROUTER_MODEL`. Popular options:
+- `google/gemini-2.5-flash` (Default)
+- `google/gemini-2.5-pro`
+- `openai/gpt-4o-mini`
+- `anthropic/claude-3-haiku`
+
+### Error Resilience
+Centralized retry logic in `LLMService` automatically retries transient status codes (429, 500, 502, 503, 504) and network timeouts using exponential backoff, while aborting immediately for validation/auth errors (401, 404).
 
 ## License
 

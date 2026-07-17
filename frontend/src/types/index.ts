@@ -43,10 +43,12 @@ export interface ResumeData {
 export interface ATSDetails {
   overall: number;
   formatting: number;
-  keywords: number;
+  keywords: number | null;
   experience: number;
   education: number;
   skills: number;
+  breakdown?: Record<string, number | null>;
+  category_suggestions?: Suggestion[];
 }
 
 export interface Suggestion {
