@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = ""
+    OPENAI_MODEL: str = "gpt-4o-mini"
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
     MAX_FILE_SIZE_MB: int = 10
     ENVIRONMENT: str = "development"

@@ -30,3 +30,10 @@ backend/.env.development
 # OS
 .DS_Store
 Thumbs.db
+
+# Databases, Logs, and Uploads
+*.db
+logs/
+*.log
+uploads/
+backend/uploads/corrected/

@@ -11,6 +11,12 @@ import {
   Sparkles,
   AlertCircle,
   CheckCircle,
+  Download,
+  Eye,
+  Wand2,
+  TrendingUp,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import api from "@/lib/api";
-import { Resume, Analysis, ATSDetails } from "@/types";
+import { Resume, Analysis, ATSDetails, CorrectionResult } from "@/types";
 import { formatFileSize, getScoreColor, getScoreBg } from "@/lib/utils";
 import toast from "react-hot-toast";
 
@@ -77,6 +83,9 @@ export default function AnalyzePage() {
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [correcting, setCorrecting] = useState(false);
+  const [correctionResult, setCorrectionResult] = useState<CorrectionResult | null>(null);
+  const [showChanges, setShowChanges] = useState(false);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const selectedFile = acceptedFiles[0];
@@ -152,6 +161,61 @@ export default function AnalyzePage() {
     setJobDescription("");
     setAnalysis(null);
     setUploadProgress(0);
+    setCorrectionResult(null);
+    setShowChanges(false);
+  };
+
+  const handleCorrect = async () => {
+    if (!resume) return;
+    setCorrecting(true);
+    setCorrectionResult(null);
+    setShowChanges(false);
+    try {
+      const res = await api.post(`/correction/correct?resume_id=${resume.id}`);
+      setCorrectionResult(res.data);
+      toast.success(`Resume corrected! ${res.data.changed_lines} lines improved.`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Correction failed");
+    } finally {
+      setCorrecting(false);
+    }
+  };
+
+  const handleDownload = async (filename: string, type: "pdf" | "docx") => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`/api/v1/correction/download/${filename}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Download failed");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success(`Corrected ${type.toUpperCase()} downloaded!`);
+    } catch (error) {
+      toast.error("Download failed");
+    }
+  };
+
+  const handlePreview = async (filename: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`/api/v1/correction/preview/${filename}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Preview failed");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (error) {
+      toast.error("Preview failed");
+    }
   };
 
   return (
@@ -504,6 +568,104 @@ export default function AnalyzePage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Fix Resume Section */}
+            <Card className="border-primary/30">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wand2 className="w-5 h-5 text-primary-light" />
+                  Fix Resume
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!correctionResult && !correcting && (
+                  <div className="text-center py-4">
+                    <p className="text-sm text-gray-400 mb-4">
+                      Let AI correct grammar, spelling, and improve your resume text while keeping the original formatting intact.
+                    </p>
+                    <Button onClick={handleCorrect} size="lg">
+                      <Wand2 className="w-4 h-4 mr-2" />
+                      Fix My Resume
+                    </Button>
+                  </div>
+                )}
+
+                {correcting && (
+                  <div className="text-center py-8">
+                    <Loader2 className="w-10 h-10 text-primary-light mx-auto animate-spin mb-4" />
+                    <p className="text-gray-200 font-medium mb-1">AI is correcting your resume...</p>
+                    <p className="text-sm text-gray-400">Preserving original formatting while improving text</p>
+                  </div>
+                )}
+
+                {correctionResult && !correcting && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-success/10 border border-success/20">
+                      <CheckCircle className="w-5 h-5 text-success" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-200">{correctionResult.message}</p>
+                        <p className="text-xs text-gray-400">
+                          {correctionResult.total_lines} lines analyzed, {correctionResult.changed_lines} lines improved
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      {correctionResult.corrected_pdf && (
+                        <>
+                          <Button onClick={() => handleDownload(correctionResult.corrected_pdf!, "pdf")}>
+                            <Download className="w-4 h-4 mr-2" />
+                            Download Corrected PDF
+                          </Button>
+                          <Button variant="outline" onClick={() => handlePreview(correctionResult.corrected_pdf!)}>
+                            <Eye className="w-4 h-4 mr-2" />
+                            Preview Corrected Resume
+                          </Button>
+                        </>
+                      )}
+                      {correctionResult.corrected_docx && (
+                        <Button onClick={() => handleDownload(correctionResult.corrected_docx!, "docx")}>
+                          <Download className="w-4 h-4 mr-2" />
+                          Download Corrected DOCX
+                        </Button>
+                      )}
+                    </div>
+
+                    {correctionResult.changes.length > 0 && (
+                      <div>
+                        <button
+                          onClick={() => setShowChanges(!showChanges)}
+                          className="flex items-center gap-2 text-sm text-primary-light hover:text-primary transition-colors"
+                        >
+                          {showChanges ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          View {correctionResult.changes.length} changes made
+                        </button>
+
+                        {showChanges && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="mt-3 space-y-2 max-h-96 overflow-y-auto"
+                          >
+                            {correctionResult.changes.map((change, i) => (
+                              <div key={i} className="p-3 rounded-lg bg-background/50 border border-gray-800 text-xs">
+                                <p className="text-red-400 line-through mb-1">{change.original}</p>
+                                <p className="text-success">{change.corrected}</p>
+                              </div>
+                            ))}
+                          </motion.div>
+                        )}
+                      </div>
+                    )}
+
+                    <Button variant="outline" onClick={() => { setCorrectionResult(null); setShowChanges(false); }}>
+                      Correct Again
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={reset}>

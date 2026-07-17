@@ -98,3 +98,17 @@ export interface AnalyticsData {
     poor: number;
   };
 }
+
+export interface ChangeDetail {
+  original: string;
+  corrected: string;
+}
+
+export interface CorrectionResult {
+  corrected_pdf: string | null;
+  corrected_docx: string | null;
+  changes: ChangeDetail[];
+  total_lines: number;
+  changed_lines: number;
+  message: string;
+}

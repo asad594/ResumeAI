@@ -20,7 +20,7 @@ async def create_analysis(
     db: Session = Depends(get_db),
 ):
     service = AnalysisService(db)
-    analysis = service.create_analysis(current_user.id, data)
+    analysis = await service.create_analysis(current_user.id, data)
     return AnalysisResponse.model_validate(analysis)
 
 

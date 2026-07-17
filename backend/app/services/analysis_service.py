@@ -13,9 +13,84 @@ from loguru import logger
 class AnalysisService:
     def __init__(self, db: Session):
         self.db = db
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        self.client = None
+        if settings.OPENAI_API_KEY:
+            kwargs = {"api_key": settings.OPENAI_API_KEY}
+            if settings.OPENAI_BASE_URL:
+                kwargs["base_url"] = settings.OPENAI_BASE_URL
+            self.client = OpenAI(**kwargs)
 
-    def create_analysis(self, user_id: int, data: AnalysisCreate) -> Analysis:
+    async def _evaluate_resume_with_llm(self, raw_text: str, job_description: Optional[str] = None) -> dict:
+        if not self.client:
+            return {}
+
+        prompt = f"""
+        Analyze the following resume text. Evaluate the language and quality, and score each category from 0 to 100:
+        1. "grammar": Grammar, spelling, punctuation, and typos.
+        2. "action_verbs": Use of strong, professional action verbs instead of weak ones (e.g., "engineered" instead of "worked on").
+        3. "metrics": Presence and quality of quantifiable results, percentages, and numbers (e.g., "improved speed by 30%").
+        4. "formatting_readability": Readability, structure, flow, and professional tone.
+        
+        Provide constructive suggestions for improvement if any of these scores are below 90.
+        For each suggestion, provide:
+        - "type": one of "grammar", "action_verbs", "metrics", "formatting"
+        - "severity": "high", "medium", or "low"
+        - "title": a short title
+        - "description": a specific description of what to improve based on the resume text
+        - "category": a category name (e.g., "Quality", "Language", "Impact", "Format")
+
+        CRITICAL REQUIREMENT:
+        The output MUST be a valid JSON object. Inside the JSON string fields (like "description"), any double quotes (") MUST be escaped as \\" and backslashes (\\) MUST be escaped as \\\\. Single quotes (') do not need to be escaped, but do not use unescaped double quotes inside values.
+
+        Format your response as a valid JSON object with the following structure:
+        {{
+            "scores": {{
+                "grammar": 95,
+                "action_verbs": 80,
+                "metrics": 60,
+                "formatting_readability": 85
+            }},
+            "suggestions": [
+                {{
+                    "type": "metrics",
+                    "severity": "medium",
+                    "title": "Add Quantifiable Metrics",
+                    "description": "While you describe your work well, consider adding percentages or numbers to demonstrate impact.",
+                    "category": "Impact"
+                }}
+            ]
+        }}
+        
+        Resume text to analyze:
+        ---
+        {raw_text}
+        ---
+        """
+
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a professional resume auditor that outputs valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+            )
+            content = response.choices[0].message.content.strip()
+            
+            if content.startswith("```"):
+                content = content.split("\n", 1)[1]
+                if content.endswith("```"):
+                    content = content[:-3]
+                content = content.strip()
+
+            return json.loads(content)
+        except Exception as e:
+            logger.error(f"Failed to evaluate resume with LLM: {e}")
+            return {}
+
+    async def create_analysis(self, user_id: int, data: AnalysisCreate) -> Analysis:
         resume = self.db.query(Resume).filter(
             Resume.id == data.resume_id,
             Resume.user_id == user_id
@@ -28,7 +103,73 @@ class AnalysisService:
 
         ats_score = self._calculate_ats_score(extracted, data.job_description)
         skills_analysis = self._analyze_skills(extracted, data.job_description)
-        suggestions = self._generate_suggestions(extracted, ats_score)
+        
+        # Call Gemini to dynamically evaluate the resume text
+        llm_eval = await self._evaluate_resume_with_llm(raw_text, data.job_description)
+        
+        suggestions = []
+        # Add basic section checks
+        if ats_score.get("formatting", 0) < 80:
+            suggestions.append({
+                "type": "formatting",
+                "severity": "high",
+                "title": "Improve Resume Formatting",
+                "description": "Add missing sections like contact information, professional summary, and ensure consistent formatting throughout.",
+                "category": "Format"
+            })
+        if not extracted.get("experience"):
+            suggestions.append({
+                "type": "experience",
+                "severity": "high",
+                "title": "Add Work Experience",
+                "description": "Include detailed work experience with specific job titles, companies, dates, and achievements.",
+                "category": "Content"
+            })
+        if not extracted.get("education"):
+            suggestions.append({
+                "type": "education",
+                "severity": "medium",
+                "title": "Add Education Details",
+                "description": "Include your educational background with degrees, institutions, and graduation dates.",
+                "category": "Content"
+            })
+        skills = extracted.get("skills", [])
+        if len(skills) < 5:
+            suggestions.append({
+                "type": "skills",
+                "severity": "high",
+                "title": "Add More Skills",
+                "description": "Include at least 8-12 relevant technical and soft skills to improve ATS matching.",
+                "category": "Content"
+            })
+
+        if llm_eval and "scores" in llm_eval:
+            # Integrate dynamic suggestions from LLM
+            suggestions.extend(llm_eval.get("suggestions", []))
+            
+            # Incorporate dynamic scores into details
+            llm_scores = llm_eval["scores"]
+            grammar_score = llm_scores.get("grammar", 100)
+            action_verbs_score = llm_scores.get("action_verbs", 100)
+            metrics_score = llm_scores.get("metrics", 100)
+            
+            ats_score["grammar"] = grammar_score
+            ats_score["action_verbs"] = action_verbs_score
+            ats_score["metrics"] = metrics_score
+            
+            # Blend readability into formatting
+            if "formatting_readability" in llm_scores:
+                ats_score["formatting"] = round((ats_score["formatting"] + llm_scores["formatting_readability"]) / 2, 1)
+            
+            # Recalculate overall score with language quality included (30% weight)
+            language_score = (grammar_score * 0.4 + action_verbs_score * 0.3 + metrics_score * 0.3)
+            base_overall = ats_score.get("overall", 0)
+            overall_score = round(base_overall * 0.7 + language_score * 0.3, 1)
+            ats_score["overall"] = overall_score
+        else:
+            # Fallback to static suggestions
+            suggestions.extend(self._generate_suggestions(extracted, ats_score))
+
         job_match = self._calculate_job_match(extracted, data.job_description)
 
         analysis = Analysis(
