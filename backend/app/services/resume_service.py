@@ -102,37 +102,57 @@ class ResumeService:
             if any(kw in lower for kw in ["city", "state", "country", "address", "location"]) and not location:
                 location = line
 
-        sections = {
-            "skills": ["skills", "technical skills", "technologies", "proficiencies"],
-            "education": ["education", "academic", "degree", "university", "college"],
-            "experience": ["experience", "work experience", "employment", "work history"],
-            "projects": ["projects", "personal projects", "key projects"],
-            "certificates": ["certifications", "certificates", "licenses"],
-            "languages": ["languages", "foreign languages"],
+        header_mapping = {
+            "skills": ["skills", "technical skills", "technologies", "skills & technologies", "skills and technologies", "proficiencies", "core competencies", "skills & tools", "technical proficiencies"],
+            "education": ["education", "academic background", "academic profile", "academic history", "education & credentials", "academic credentials"],
+            "experience": ["experience", "work experience", "employment history", "work history", "professional experience", "professional history", "employment", "relevant experience"],
+            "projects": ["projects", "personal projects", "key projects", "academic projects", "featured projects"],
+            "certificates": ["certifications", "certificates", "licenses", "credentials", "awards & certifications"],
+            "languages": ["languages", "languages known", "foreign languages"]
         }
 
         current_section = None
         for line in lines:
-            lower = line.lower().strip()
-            for section_key, keywords in sections.items():
-                if any(kw in lower for kw in keywords) and len(line) < 50:
-                    current_section = section_key
+            line_clean = line.strip()
+            lower_clean = line_clean.lower().replace(":", "").replace(" - ", "").replace(" | ", "").strip()
+            
+            # Check if this line is a known section header
+            found_section = None
+            for section_key, headers in header_mapping.items():
+                if lower_clean in headers:
+                    found_section = section_key
                     break
+            
+            if found_section:
+                current_section = found_section
             else:
-                if current_section and line not in ["", " "]:
+                # Check if it looks like a generic section header to stop adding to previous section
+                is_generic_header = False
+                if len(line_clean) < 40 and any(c.isalpha() for c in line_clean):
+                    is_all_caps = line_clean == line_clean.upper()
+                    has_connector = any(conn in line_clean.lower() for conn in [" & ", " and ", " or "])
+                    if (is_all_caps or has_connector) and not line_clean.startswith(("●", "•", "-", "*")):
+                        is_generic_header = True
+                
+                if is_generic_header:
+                    current_section = None
+                elif current_section and line_clean:
                     if current_section == "skills":
-                        skill_items = [s.strip() for s in line.replace("•", "").replace("-", "").replace(",", "\n").split("\n") if s.strip()]
-                        skills.extend(skill_items)
+                        # Split by commas and newlines to get individual skills
+                        for part in line_clean.replace(",", "\n").split("\n"):
+                            part_clean = part.strip().lstrip("•-*●▪▪◦ ").strip()
+                            if part_clean:
+                                skills.append(part_clean)
                     elif current_section == "education":
-                        education.append(line)
+                        education.append(line_clean)
                     elif current_section == "experience":
-                        experience.append(line)
+                        experience.append(line_clean)
                     elif current_section == "projects":
-                        projects.append(line)
+                        projects.append(line_clean)
                     elif current_section == "certificates":
-                        certificates.append(line)
+                        certificates.append(line_clean)
                     elif current_section == "languages":
-                        languages.append(line)
+                        languages.append(line_clean)
 
         return {
             "name": name,
