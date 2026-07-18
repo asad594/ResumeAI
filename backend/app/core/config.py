@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     ATS_ROLE_MATCH_BACKEND_DEVELOPER_OFFSET: float = 5.0
     ATS_ROLE_MATCH_FULL_STACK_DEVELOPER_OFFSET: float = -5.0
     ATS_ROLE_MATCH_DATA_ENGINEER_OFFSET: float = -10.0
+    ATS_ROLE_MATCH_AI_ML_ENGINEER_OFFSET: float = -15.0
     # ATS Breakdown and Threshold Configurations
     ATS_BREAKDOWN_THRESHOLD: int = 75
     ATS_MAX_CATEGORY_SCORE: int = 100
